@@ -1,24 +1,67 @@
 package main
 
 import (
-	"log"
+	"database/sql"
+	"flag"
+	"log/slog"
 	"net/http"
+	"os"
+	"text/template"
+
+	_ "github.com/go-sql-driver/mysql"
+	"snippetbox.ambarish.net/internal/models"
 )
 
+type application struct {
+	logger        *slog.Logger
+	snippets      *models.SnippetModel
+	templateCache map[string]*template.Template
+}
+
 func main() {
-	mux := http.NewServeMux()
+	addr := flag.String("addr", ":4000", "HTTP network address")
+	dsn := flag.String("dsn", "web:pass@/snippetbox?parseTime=true", "MySQL data source name")
+	flag.Parse()
 
-	fileserver := http.FileServer(http.Dir("./ui/static/"))
+	json_logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
-	mux.Handle("GET /static/", http.StripPrefix("/static", fileserver))
+	db, err := openDB(*dsn)
+	if err != nil {
+		json_logger.Error(err.Error())
+		os.Exit(1)
+	}
 
-	mux.HandleFunc("GET /{$}", home)
-	mux.HandleFunc("GET /snippet/view/{id}", snippetView)
-	mux.HandleFunc("GET /snippet/create", snippetCreate)
-	mux.HandleFunc("POST /snippet/create", snippetCreatePost)
+	defer db.Close()
 
-	log.Print("starting server on :4000")
+	templateCache, err := newTemplateCache()
+	if err != nil {
+		json_logger.Error(err.Error())
+		os.Exit(1)
+	}
 
-	err := http.ListenAndServe(":4000", mux)
-	log.Fatal(err)
+	app := &application{
+		logger:        json_logger,
+		snippets:      &models.SnippetModel{DB: db},
+		templateCache: templateCache,
+	}
+
+	json_logger.Info("starting server", slog.String("addr", *addr))
+
+	err = http.ListenAndServe(*addr, app.routes())
+	json_logger.Error(err.Error())
+	os.Exit(1)
+}
+
+func openDB(dsn string) (*sql.DB, error) {
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		return nil, err
+	}
+
+	err = db.Ping()
+	if err != nil {
+		return nil, err
+	}
+
+	return db, nil
 }
