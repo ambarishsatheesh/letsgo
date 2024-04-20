@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"database/sql"
 	"flag"
 	"log/slog"
@@ -20,6 +21,7 @@ import (
 type application struct {
 	logger         *slog.Logger
 	snippets       *models.SnippetModel
+	users          *models.UserModel
 	templateCache  map[string]*template.Template
 	formDecoder    *form.Decoder
 	sessionManager *scs.SessionManager
@@ -56,15 +58,24 @@ func main() {
 	app := &application{
 		logger:         json_logger,
 		snippets:       &models.SnippetModel{DB: db},
+		users:          &models.UserModel{DB: db},
 		templateCache:  templateCache,
 		formDecoder:    formDecoder,
 		sessionManager: sessionManager,
 	}
 
+	tlsConfig := &tls.Config{
+		CurvePreferences: []tls.CurveID{tls.X25519, tls.CurveP256},
+	}
+
 	srv := &http.Server{
-		Addr:     *addr,
-		Handler:  app.routes(),
-		ErrorLog: slog.NewLogLogger(json_logger.Handler(), slog.LevelError),
+		Addr:         *addr,
+		Handler:      app.routes(),
+		ErrorLog:     slog.NewLogLogger(json_logger.Handler(), slog.LevelError),
+		TLSConfig:    tlsConfig,
+		IdleTimeout:  time.Minute,
+		ReadTimeout:  5 * time.Second,
+		WriteTimeout: 10 * time.Second,
 	}
 
 	json_logger.Info("starting server", slog.String("addr", *addr))
