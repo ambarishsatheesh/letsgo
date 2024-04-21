@@ -4,10 +4,10 @@ import (
 	"crypto/tls"
 	"database/sql"
 	"flag"
+	"html/template"
 	"log/slog"
 	"net/http"
 	"os"
-	"text/template"
 	"time"
 
 	"snippetbox.ambarish.net/internal/models"
